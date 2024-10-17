@@ -61,6 +61,11 @@ func (h *Handler) CreateBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := book.Validate(); err != nil {
+		errors.WriteErrorResponse(w, errors.NewBadRequestError(err.Error()))
+		return
+	}
+
 	if err := h.db.CreateBook(&book); err != nil {
 		log.Printf("Error creating book: %v", err)
 		errors.WriteErrorResponse(w, errors.NewInternalServerError("Failed to create book", err))
@@ -86,6 +91,11 @@ func (h *Handler) UpdateBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	book.ID = id
+
+	if err := book.Validate(); err != nil {
+		errors.WriteErrorResponse(w, errors.NewBadRequestError(err.Error()))
+		return
+	}
 
 	if err := h.db.UpdateBook(&book); err != nil {
 		log.Printf("Error updating book: %v", err)
