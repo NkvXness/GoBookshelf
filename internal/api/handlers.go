@@ -2,9 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
+	"github.com/NkvXness/GoBookshelf/internal/errors"
 	"github.com/NkvXness/GoBookshelf/internal/models"
 	"github.com/NkvXness/GoBookshelf/internal/storage"
 )
@@ -20,7 +22,8 @@ func NewHandler(db *storage.Database) *Handler {
 func (h *Handler) ListBooks(w http.ResponseWriter, r *http.Request) {
 	books, err := h.db.ListBooks()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error listing books: %v", err)
+		errors.WriteErrorResponse(w, errors.NewInternalServerError("Failed to list books", err))
 		return
 	}
 
@@ -32,17 +35,18 @@ func (h *Handler) GetBook(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Query().Get("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		errors.WriteErrorResponse(w, errors.NewBadRequestError("Invalid book ID"))
 		return
 	}
 
 	book, err := h.db.GetBook(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error getting book: %v", err)
+		errors.WriteErrorResponse(w, errors.NewInternalServerError("Failed to get book", err))
 		return
 	}
 	if book == nil {
-		http.Error(w, "Book not found", http.StatusNotFound)
+		errors.WriteErrorResponse(w, errors.NewNotFoundError("Book not found"))
 		return
 	}
 
@@ -53,12 +57,18 @@ func (h *Handler) GetBook(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CreateBook(w http.ResponseWriter, r *http.Request) {
 	var book models.Book
 	if err := json.NewDecoder(r.Body).Decode(&book); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		errors.WriteErrorResponse(w, errors.NewBadRequestError("Invalid book data"))
+		return
+	}
+
+	if err := book.Validate(); err != nil {
+		errors.WriteErrorResponse(w, errors.NewBadRequestError(err.Error()))
 		return
 	}
 
 	if err := h.db.CreateBook(&book); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error creating book: %v", err)
+		errors.WriteErrorResponse(w, errors.NewInternalServerError("Failed to create book", err))
 		return
 	}
 
@@ -71,19 +81,25 @@ func (h *Handler) UpdateBook(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Query().Get("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		errors.WriteErrorResponse(w, errors.NewBadRequestError("Invalid book ID"))
 		return
 	}
 
 	var book models.Book
 	if err := json.NewDecoder(r.Body).Decode(&book); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		errors.WriteErrorResponse(w, errors.NewBadRequestError("Invalid book data"))
 		return
 	}
 	book.ID = id
 
+	if err := book.Validate(); err != nil {
+		errors.WriteErrorResponse(w, errors.NewBadRequestError(err.Error()))
+		return
+	}
+
 	if err := h.db.UpdateBook(&book); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error updating book: %v", err)
+		errors.WriteErrorResponse(w, errors.NewInternalServerError("Failed to update book", err))
 		return
 	}
 
@@ -95,12 +111,13 @@ func (h *Handler) DeleteBook(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Query().Get("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		errors.WriteErrorResponse(w, errors.NewBadRequestError("Invalid book ID"))
 		return
 	}
 
 	if err := h.db.DeleteBook(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error deleting book: %v", err)
+		errors.WriteErrorResponse(w, errors.NewInternalServerError("Failed to delete book", err))
 		return
 	}
 
