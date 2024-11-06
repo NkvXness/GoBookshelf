@@ -20,15 +20,39 @@ func NewHandler(db *storage.Database) *Handler {
 }
 
 func (h *Handler) ListBooks(w http.ResponseWriter, r *http.Request) {
-	books, err := h.db.ListBooks()
+	page, err := strconv.Atoi(r.URL.Query().Get("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if err != nil || pageSize < 1 || pageSize > 100 {
+		pageSize = 10 // Значение по умолчанию
+	}
+
+	books, total, err := h.db.ListBooks(page, pageSize)
 	if err != nil {
 		log.Printf("Error listing books: %v", err)
 		errors.WriteErrorResponse(w, errors.NewInternalServerError("Failed to list books", err))
 		return
 	}
 
+	response := struct {
+		Books       []*models.Book `json:"books"`
+		TotalBooks  int            `json:"total_books"`
+		CurrentPage int            `json:"current_page"`
+		PageSize    int            `json:"page_size"`
+		TotalPages  int            `json:"total_pages"`
+	}{
+		Books:       books,
+		TotalBooks:  total,
+		CurrentPage: page,
+		PageSize:    pageSize,
+		TotalPages:  (total + pageSize - 1) / pageSize,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(books)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *Handler) GetBook(w http.ResponseWriter, r *http.Request) {
