@@ -104,15 +104,24 @@ func (d *Database) DeleteBook(id int64) error {
 	return nil
 }
 
-func (d *Database) ListBooks() ([]*models.Book, error) {
+func (d *Database) ListBooks(page, pageSize int) ([]*models.Book, int, error) {
+	offset := (page - 1) * pageSize
+
+	var total int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM books").Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get total book count: %w", err)
+	}
+
 	query := `
 		SELECT id, title, author, isbn, published, created_at, updated_at
 		FROM books
 		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
 	`
-	rows, err := d.db.Query(query)
+	rows, err := d.db.Query(query, pageSize, offset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query books: %w", err)
+		return nil, 0, fmt.Errorf("failed to query books: %w", err)
 	}
 	defer rows.Close()
 
@@ -129,14 +138,14 @@ func (d *Database) ListBooks() ([]*models.Book, error) {
 			&book.UpdatedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan book row: %w", err)
+			return nil, 0, fmt.Errorf("failed to scan book row: %w", err)
 		}
 		books = append(books, &book)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating book rows: %w", err)
+		return nil, 0, fmt.Errorf("error iterating book rows: %w", err)
 	}
 
-	return books, nil
+	return books, total, nil
 }
