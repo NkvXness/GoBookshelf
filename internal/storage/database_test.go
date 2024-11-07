@@ -27,7 +27,7 @@ func setupTestDB(t *testing.T) (*Database, func()) {
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`
-	_, err = db.db.Exec(query)
+	_, err = db.DB.Exec(query)
 	if err != nil {
 		t.Fatalf("Failed to create books table: %v", err)
 	}
