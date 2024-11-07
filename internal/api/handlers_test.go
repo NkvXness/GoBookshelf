@@ -62,7 +62,7 @@ func TestListBooksAPI(t *testing.T) {
 	handler, cleanup := setupTestAPI(t)
 	defer cleanup()
 
-	// Создаем тестовые книги
+	// Создаём тестовые книги
 	for i := 0; i < 15; i++ {
 		book := models.Book{
 			Title:     fmt.Sprintf("Test Book %d", i),

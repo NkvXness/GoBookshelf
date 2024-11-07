@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/NkvXness/GoBookshelf/internal/models"
@@ -10,7 +11,7 @@ import (
 )
 
 type Database struct {
-	db *sql.DB
+	DB *sql.DB
 }
 
 func NewDatabase(dbPath string) (*Database, error) {
@@ -23,20 +24,20 @@ func NewDatabase(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	return &Database{db: db}, nil
+	return &Database{DB: db}, nil
 }
 
 func (d *Database) Close() error {
-	return d.db.Close()
+	return d.DB.Close()
 }
 
 func (d *Database) CreateBook(book *models.Book) error {
 	query := `
-		INSERT INTO books (title, author, isbn, published, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`
+        INSERT INTO books (title, author, isbn, published, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `
 	now := time.Now()
-	result, err := d.db.Exec(query, book.Title, book.Author, book.ISBN, book.Published, now, now)
+	result, err := d.DB.Exec(query, book.Title, book.Author, book.ISBN, book.Published, now, now)
 	if err != nil {
 		return fmt.Errorf("failed to create book: %w", err)
 	}
@@ -54,13 +55,15 @@ func (d *Database) CreateBook(book *models.Book) error {
 }
 
 func (d *Database) GetBook(id int64) (*models.Book, error) {
+	log.Printf("Attempting to get book with ID: %d", id)
+
 	query := `
-		SELECT id, title, author, isbn, published, created_at, updated_at
-		FROM books
-		WHERE id = ?
-	`
+        SELECT id, title, author, isbn, published, created_at, updated_at
+        FROM books
+        WHERE id = ?
+    `
 	var book models.Book
-	err := d.db.QueryRow(query, id).Scan(
+	err := d.DB.QueryRow(query, id).Scan(
 		&book.ID,
 		&book.Title,
 		&book.Author,
@@ -71,56 +74,117 @@ func (d *Database) GetBook(id int64) (*models.Book, error) {
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("Book with ID %d not found", id)
 			return nil, nil
 		}
+		log.Printf("Error querying book: %v", err)
 		return nil, fmt.Errorf("failed to get book: %w", err)
 	}
 
+	log.Printf("Successfully retrieved book: %+v", book)
 	return &book, nil
 }
 
-func (d *Database) UpdateBook(book *models.Book) error {
-	query := `
-		UPDATE books
-		SET title = ?, author = ?, isbn = ?, published = ?, updated_at = ?
-		WHERE id = ?
-	`
-	now := time.Now()
-	_, err := d.db.Exec(query, book.Title, book.Author, book.ISBN, book.Published, now, book.ID)
+func (d *Database) DeleteBook(id int64) error {
+	log.Printf("Attempting to delete book with ID: %d", id)
+
+	// Проверяем существование книги перед удалением
+	existingBook, err := d.GetBook(id)
 	if err != nil {
-		return fmt.Errorf("failed to update book: %w", err)
+		log.Printf("Error checking book existence: %v", err)
+		return fmt.Errorf("failed to check book existence: %w", err)
+	}
+	if existingBook == nil {
+		log.Printf("Book with ID %d not found", id)
+		return fmt.Errorf("book not found")
 	}
 
-	book.UpdatedAt = now
+	// Удаляем книгу
+	query := "DELETE FROM books WHERE id = ?"
+	result, err := d.DB.Exec(query, id)
+	if err != nil {
+		log.Printf("Error executing delete query: %v", err)
+		return fmt.Errorf("failed to delete book: %w", err)
+	}
+
+	// Проверяем, была ли книга действительно удалена
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected: %v", err)
+		return fmt.Errorf("failed to get delete result: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		log.Printf("No rows were affected when deleting book %d", id)
+		return fmt.Errorf("book not found or already deleted")
+	}
+
+	log.Printf("Successfully deleted book %d", id)
 	return nil
 }
 
-func (d *Database) DeleteBook(id int64) error {
-	query := "DELETE FROM books WHERE id = ?"
-	_, err := d.db.Exec(query, id)
+func (d *Database) UpdateBook(book *models.Book) error {
+	log.Printf("Attempting to update book: %+v", book)
+
+	query := `
+        UPDATE books
+        SET title = ?, author = ?, isbn = ?, published = ?, updated_at = ?
+        WHERE id = ?
+    `
+	now := time.Now()
+	result, err := d.DB.Exec(query,
+		book.Title,
+		book.Author,
+		book.ISBN,
+		book.Published,
+		now,
+		book.ID,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to delete book: %w", err)
+		log.Printf("Error executing update query: %v", err)
+		return fmt.Errorf("failed to update book: %w", err)
 	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected: %v", err)
+		return fmt.Errorf("failed to get update result: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		log.Printf("No rows were affected when updating book %d", book.ID)
+		return fmt.Errorf("book not found or no changes made")
+	}
+
+	book.UpdatedAt = now
+	log.Printf("Successfully updated book: %+v", book)
 	return nil
 }
 
 func (d *Database) ListBooks(page, pageSize int) ([]*models.Book, int, error) {
+	log.Printf("Attempting to list books with page=%d, pageSize=%d", page, pageSize)
+
 	offset := (page - 1) * pageSize
 
+	// Получаем общее количество книг
 	var total int
-	err := d.db.QueryRow("SELECT COUNT(*) FROM books").Scan(&total)
+	err := d.DB.QueryRow("SELECT COUNT(*) FROM books").Scan(&total)
 	if err != nil {
+		log.Printf("Error getting total book count: %v", err)
 		return nil, 0, fmt.Errorf("failed to get total book count: %w", err)
 	}
+	log.Printf("Total books count: %d", total)
 
+	// Получаем книги для текущей страницы
 	query := `
-		SELECT id, title, author, isbn, published, created_at, updated_at
-		FROM books
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`
-	rows, err := d.db.Query(query, pageSize, offset)
+        SELECT id, title, author, isbn, published, created_at, updated_at
+        FROM books
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+    `
+	rows, err := d.DB.Query(query, pageSize, offset)
 	if err != nil {
+		log.Printf("Error querying books: %v", err)
 		return nil, 0, fmt.Errorf("failed to query books: %w", err)
 	}
 	defer rows.Close()
@@ -138,14 +202,17 @@ func (d *Database) ListBooks(page, pageSize int) ([]*models.Book, int, error) {
 			&book.UpdatedAt,
 		)
 		if err != nil {
+			log.Printf("Error scanning book row: %v", err)
 			return nil, 0, fmt.Errorf("failed to scan book row: %w", err)
 		}
 		books = append(books, &book)
 	}
 
 	if err := rows.Err(); err != nil {
+		log.Printf("Error iterating book rows: %v", err)
 		return nil, 0, fmt.Errorf("error iterating book rows: %w", err)
 	}
 
+	log.Printf("Successfully retrieved %d books", len(books))
 	return books, total, nil
 }
