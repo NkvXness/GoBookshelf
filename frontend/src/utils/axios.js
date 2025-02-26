@@ -2,20 +2,25 @@ import axios from "axios";
 
 // Создаем экземпляр axios с базовой конфигурацией
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: "", // Пустая строка, запросы будут идти относительно текущего домена
   headers: {
     "Content-Type": "application/json",
   },
+  timeout: 10000,
 });
 
 // Добавляем перехватчик для запросов
 api.interceptors.request.use(
   (config) => {
-    console.log("Making request to:", config.url, config.method?.toUpperCase());
+    // Логирование запросов
+    console.log(`${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Не добавляем префикс /api, так как в консоли видно, что запросы уже идут с /api
+    
     return config;
   },
   (error) => {
-    console.error("Request error:", error);
+    console.error("Ошибка запроса:", error);
     return Promise.reject(error);
   }
 );
@@ -23,15 +28,11 @@ api.interceptors.request.use(
 // Добавляем перехватчик для ответов
 api.interceptors.response.use(
   (response) => {
-    console.log(
-      "Received response from:",
-      response.config.url,
-      response.status
-    );
+    console.log(`Ответ от ${response.config.url}: ${response.status}`);
     return response;
   },
   (error) => {
-    console.error("Response error:", error.response?.data || error.message);
+    console.error("Ошибка ответа:", error.response?.data || error.message);
     return Promise.reject(error);
   }
 );
