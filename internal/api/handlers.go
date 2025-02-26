@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NkvXness/GoBookshelf/internal/errors"
@@ -26,7 +27,7 @@ func NewHandler(db *storage.Database) *Handler {
 func (h *Handler) RegisterRoutes(router *Router) {
 	// Книги - групповые операции
 	router.GET("/api/books", h.ListBooks)
-	router.POST("/api/books", h.CreateBook)
+	router.POST("/api/books", h.HandleBooksPost)
 
 	// Книги - операции с конкретной книгой
 	router.GET("/api/books/{id}", h.GetBook)
@@ -35,6 +36,112 @@ func (h *Handler) RegisterRoutes(router *Router) {
 
 	// Поиск книг
 	router.GET("/api/books/search", h.SearchBooks)
+}
+
+// HandleBooksPost обрабатывает все POST запросы к /api/books
+func (h *Handler) HandleBooksPost(w http.ResponseWriter, r *http.Request) {
+	// Проверяем параметры запроса
+	idParam := r.URL.Query().Get("id")
+	action := r.URL.Query().Get("action")
+
+	log.Printf("POST /api/books с параметрами id=%s, action=%s", idParam, action)
+
+	// Если есть id и action=delete, выполняем удаление
+	if idParam != "" && action == "delete" {
+		id, err := strconv.ParseInt(idParam, 10, 64)
+		if err != nil {
+			log.Printf("Некорректный ID: %s. Ошибка: %v", idParam, err)
+			errors.WriteErrorResponse(w, errors.NewBadRequestError("Некорректный ID книги"))
+			return
+		}
+
+		log.Printf("Удаление книги с ID: %d", id)
+		if err := h.db.DeleteBook(id); err != nil {
+			log.Printf("Ошибка удаления книги: %v", err)
+			errors.WriteErrorResponse(w, errors.NewInternalServerError("Не удалось удалить книгу", err))
+			return
+		}
+
+		// Успешный ответ
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"message": "Книга успешно удалена"})
+		return
+	}
+
+	// Если есть id без action=delete, это обновление книги
+	if idParam != "" {
+		id, err := strconv.ParseInt(idParam, 10, 64)
+		if err != nil {
+			log.Printf("Некорректный ID: %s. Ошибка: %v", idParam, err)
+			errors.WriteErrorResponse(w, errors.NewBadRequestError("Некорректный ID книги"))
+			return
+		}
+
+		// Получаем существующую книгу для проверки
+		existingBook, err := h.db.GetBook(id)
+		if err != nil {
+			log.Printf("Ошибка получения книги: %v", err)
+			errors.WriteErrorResponse(w, errors.NewInternalServerError("Не удалось получить информацию о книге", err))
+			return
+		}
+		if existingBook == nil {
+			log.Printf("Книга с ID %d не найдена", id)
+			errors.WriteErrorResponse(w, errors.NewNotFoundError("Книга не найдена"))
+			return
+		}
+
+		// Декодируем данные книги из запроса
+		var updatedBook models.Book
+		if err := json.NewDecoder(r.Body).Decode(&updatedBook); err != nil {
+			log.Printf("Ошибка декодирования данных: %v", err)
+			errors.WriteErrorResponse(w, errors.NewBadRequestError("Некорректные данные книги"))
+			return
+		}
+
+		// Устанавливаем ID
+		updatedBook.ID = id
+
+		// Если ISBN не изменился, используем существующий
+		if updatedBook.ISBN == "" {
+			updatedBook.ISBN = existingBook.ISBN
+		}
+
+		// Форматируем ISBN
+		updatedBook.FormatISBN()
+
+		// Сохраняем даты создания и обновления
+		updatedBook.CreatedAt = existingBook.CreatedAt
+		updatedBook.UpdatedAt = time.Now()
+
+		// Валидируем данные
+		if err := updatedBook.Validate(); err != nil {
+			log.Printf("Ошибка валидации: %v", err)
+			errors.WriteErrorResponse(w, errors.NewBadRequestError(err.Error()))
+			return
+		}
+
+		// Обновляем книгу
+		if err := h.db.UpdateBook(&updatedBook); err != nil {
+			log.Printf("Ошибка обновления книги: %v", err)
+			errors.WriteErrorResponse(w, errors.NewInternalServerError("Не удалось обновить книгу", err))
+			return
+		}
+
+		// Получаем обновленную книгу
+		updatedBookFromDB, err := h.db.GetBook(id)
+		if err != nil {
+			log.Printf("Ошибка получения обновленной книги: %v", err)
+			errors.WriteErrorResponse(w, errors.NewInternalServerError("Не удалось получить обновленную информацию о книге", err))
+			return
+		}
+
+		// Отправляем ответ с обновленной книгой
+		json.NewEncoder(w).Encode(updatedBookFromDB)
+		return
+	}
+
+	// Если нет id, это создание новой книги
+	h.CreateBook(w, r)
 }
 
 // ListBooks возвращает список книг с пагинацией
@@ -155,6 +262,11 @@ func (h *Handler) UpdateBook(w http.ResponseWriter, r *http.Request) {
 	// Устанавливаем ID из URL
 	book.ID = id
 
+	// Если ISBN не указан, используем существующий
+	if book.ISBN == "" {
+		book.ISBN = existingBook.ISBN
+	}
+
 	// Форматируем ISBN
 	book.FormatISBN()
 
@@ -252,16 +364,9 @@ func (h *Handler) SearchBooks(w http.ResponseWriter, r *http.Request) {
 // extractIDFromPath извлекает ID из пути запроса
 // Например, из "/api/books/123" извлекает "123"
 func extractIDFromPath(path string) string {
-	lastSlashIndex := -1
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '/' {
-			lastSlashIndex = i
-			break
-		}
+	parts := strings.Split(path, "/")
+	if len(parts) < 3 {
+		return ""
 	}
-
-	if lastSlashIndex != -1 && lastSlashIndex < len(path)-1 {
-		return path[lastSlashIndex+1:]
-	}
-	return ""
+	return parts[len(parts)-1]
 }
