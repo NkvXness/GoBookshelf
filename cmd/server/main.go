@@ -4,68 +4,55 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/NkvXness/GoBookshelf/internal/api"
+	"github.com/NkvXness/GoBookshelf/internal/config"
 	"github.com/NkvXness/GoBookshelf/internal/storage"
 )
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.Println("Запуск сервера GoBookshelf...")
+
+	// Загружаем конфигурацию
+	cfg := config.LoadConfig()
+	log.Printf("Загружена конфигурация: %+v", cfg)
 
 	// Инициализация базы данных
-	dbPath := "bookshelf.db"
-	db, err := storage.NewDatabase(dbPath)
+	db, err := storage.NewDatabase(cfg.DBPath)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("Ошибка инициализации базы данных: %v", err)
 	}
 	defer db.Close()
 
 	// Создание таблиц
 	if err := initDatabase(db); err != nil {
-		log.Fatalf("Failed to initialize database tables: %v", err)
+		log.Fatalf("Ошибка создания таблиц: %v", err)
 	}
 
-	// Создание обработчика API
+	// Создание маршрутизатора
+	router := api.NewRouter()
+
+	// Регистрация middleware
+	router.Use(api.LoggingMiddleware)
+	router.Use(api.CorsMiddleware)
+	router.Use(api.ContentTypeJSONMiddleware)
+
+	// Создание обработчика API и регистрация маршрутов
 	handler := api.NewHandler(db)
+	handler.RegisterRoutes(router)
 
-	// Настройка маршрутизации
-	http.HandleFunc("/books", func(w http.ResponseWriter, r *http.Request) {
-		// Добавляем заголовки CORS
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		// Обработка префлайт запросов
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		log.Printf("%s %s", r.Method, r.URL.Path)
-		switch r.Method {
-		case http.MethodGet:
-			handler.ListBooks(w, r)
-		case http.MethodPost:
-			handler.CreateBook(w, r)
-		case http.MethodPut:
-			handler.UpdateBook(w, r)
-		case http.MethodDelete:
-			handler.DeleteBook(w, r)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	// Определение порта
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	// Настройка HTTP-сервера
+	addr := fmt.Sprintf(":%s", cfg.Port)
+	server := &http.Server{
+		Addr:    addr,
+		Handler: router,
 	}
 
-	log.Printf("Server is starting on port %s", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	// Запуск сервера
+	log.Printf("Сервер запущен на http://localhost%s", addr)
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("Ошибка запуска сервера: %v", err)
 	}
 }
 
@@ -88,7 +75,7 @@ func initDatabase(db *storage.Database) error {
 
 	_, err := db.DB.Exec(query)
 	if err != nil {
-		return fmt.Errorf("failed to create tables: %w", err)
+		return fmt.Errorf("ошибка создания таблиц: %w", err)
 	}
 
 	return nil
