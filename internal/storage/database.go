@@ -126,6 +126,34 @@ func (d *Database) DeleteBook(id int64) error {
 func (d *Database) UpdateBook(book *models.Book) error {
 	log.Printf("Attempting to update book: %+v", book)
 
+	// Убедимся, что книга с таким ID существует
+	existingBook, err := d.GetBook(book.ID)
+	if err != nil {
+		log.Printf("Error checking book existence: %v", err)
+		return fmt.Errorf("failed to check book existence: %w", err)
+	}
+	if existingBook == nil {
+		log.Printf("Book with ID %d not found", book.ID)
+		return fmt.Errorf("book not found")
+	}
+
+	// Проверка на изменение ISBN
+	if book.ISBN != existingBook.ISBN {
+		// Проверяем существование книги с таким же ISBN, но другим ID
+		var count int
+		err := d.DB.QueryRow("SELECT COUNT(*) FROM books WHERE isbn = ? AND id != ?", book.ISBN, book.ID).Scan(&count)
+		if err != nil {
+			log.Printf("Error checking ISBN uniqueness: %v", err)
+			return fmt.Errorf("failed to check ISBN uniqueness: %w", err)
+		}
+
+		if count > 0 {
+			log.Printf("Book with ISBN %s already exists", book.ISBN)
+			return fmt.Errorf("книга с таким ISBN уже существует")
+		}
+	}
+
+	// Выполняем обновление книги
 	query := `
         UPDATE books
         SET title = ?, author = ?, isbn = ?, published = ?, updated_at = ?
