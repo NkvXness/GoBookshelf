@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 )
 
 // Router представляет собой простой маршрутизатор для API
@@ -56,11 +57,33 @@ func (r *Router) DELETE(path string, handler http.HandlerFunc) {
 
 // ServeHTTP реализует интерфейс http.Handler и обрабатывает все запросы
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Извлекаем базовый путь без query параметров
 	path := req.URL.Path
+
+	// Проверяем точное совпадение пути
 	handlers, exists := r.routes[path]
 	if !exists {
-		http.NotFound(w, req)
-		return
+		// Если точного совпадения нет, пробуем найти обработчик
+		// который соответствует более общему пути (без ID в конце)
+		found := false
+		for routePath, routeHandlers := range r.routes {
+			// Проверяем, оканчивается ли путь на {id} (шаблон)
+			if strings.HasSuffix(routePath, "/{id}") {
+				// Удаляем /{id} из конца
+				basePath := routePath[:len(routePath)-4]
+				// Проверяем, начинается ли запрашиваемый путь с этого базового пути
+				if strings.HasPrefix(path, basePath) && len(path) > len(basePath) {
+					handlers = routeHandlers
+					found = true
+					break
+				}
+			}
+		}
+
+		if !found {
+			http.NotFound(w, req)
+			return
+		}
 	}
 
 	handler, exists := handlers[req.Method]
