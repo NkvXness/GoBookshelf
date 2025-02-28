@@ -151,6 +151,11 @@ const BooksList = ({ searchQuery }) => {
     updateMutation.mutate(editingBook);
   };
 
+  // Закрытие сообщения об ошибке
+  const handleCloseError = () => {
+    setError(null);
+  };
+
   // Фильтрация книг на стороне клиента
   const filterBooks = (books, query) => {
     if (!query || query.trim() === "") return books;
