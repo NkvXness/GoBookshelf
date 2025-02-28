@@ -1,30 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit, Trash2, User, Hash, Calendar, AlertCircle } from "lucide-react";
+import { Edit, Trash2, User, Hash, Calendar } from "lucide-react";
+import { useToast } from "../contexts/ToastContext";
 import api from "../utils/axios";
-
-// Компонент для отображения ошибок
-const ErrorAlert = ({ message, onClose }) => {
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full shadow-xl">
-        <div className="flex items-center text-red-600 dark:text-red-400 mb-4">
-          <AlertCircle className="w-6 h-6 mr-2" />
-          <h3 className="text-lg font-bold">Ошибка</h3>
-        </div>
-        <p className="mb-6 text-gray-700 dark:text-gray-300">{message}</p>
-        <div className="flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
-          >
-            Закрыть
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // Компонент карточки книги
 const BookCard = ({ book, onEdit, onDelete }) => {
@@ -78,7 +56,7 @@ const BookCard = ({ book, onEdit, onDelete }) => {
 const BooksList = ({ searchQuery }) => {
   const [page, setPage] = useState(1);
   const [editingBook, setEditingBook] = useState(null);
-  const [error, setError] = useState(null);
+  const toast = useToast();
   const queryClient = useQueryClient();
 
   // Запрос на получение книг
@@ -89,7 +67,7 @@ const BooksList = ({ searchQuery }) => {
         const response = await api.get(`/api/books?page=${page}`);
         return response.data;
       } catch (error) {
-        console.error("Ошибка загрузки книг:", error);
+        toast.error("Ошибка загрузки книг");
         throw error;
       }
     },
@@ -98,24 +76,21 @@ const BooksList = ({ searchQuery }) => {
   // Мутация для удаления книги
   const deleteMutation = useMutation({
     mutationFn: (id) => {
-      console.log(`Deleting book with ID: ${id}`);
       return api.post(`/api/books?id=${id}&action=delete`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(["books"]);
-      alert("Книга успешно удалена");
+      toast.success("Книга успешно удалена");
     },
     onError: (error) => {
       console.error("Delete error:", error);
-      setError(`Ошибка при удалении книги: ${error.response?.data?.message || error.message || "Неизвестная ошибка"}`);
+      toast.error(`Ошибка при удалении книги: ${error.response?.data?.message || "Неизвестная ошибка"}`);
     }
   });
 
   // Мутация для обновления книги
   const updateMutation = useMutation({
     mutationFn: (book) => {
-      console.log(`Updating book with ID: ${book.id}`, book);
-      
       // Отправляем только измененные поля
       const dataToUpdate = {
         title: book.title,
@@ -135,11 +110,11 @@ const BooksList = ({ searchQuery }) => {
     onSuccess: () => {
       queryClient.invalidateQueries(["books"]);
       setEditingBook(null);
-      alert("Книга успешно обновлена");
+      toast.success("Книга успешно обновлена");
     },
     onError: (error) => {
       console.error("Update error:", error);
-      setError(`Ошибка при обновлении книги: ${error.response?.data?.message || error.message || "Неизвестная ошибка"}`);
+      toast.error(`Ошибка при обновлении книги: ${error.response?.data?.message || "Неизвестная ошибка"}`);
     }
   });
 
@@ -174,11 +149,6 @@ const BooksList = ({ searchQuery }) => {
   const handleUpdateSubmit = (e) => {
     e.preventDefault();
     updateMutation.mutate(editingBook);
-  };
-
-  // Закрытие сообщения об ошибке
-  const handleCloseError = () => {
-    setError(null);
   };
 
   // Фильтрация книг на стороне клиента
@@ -225,88 +195,84 @@ const BooksList = ({ searchQuery }) => {
   // Модальное окно редактирования книги
   if (editingBook) {
     return (
-      <>
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-xl font-bold mb-4">Редактирование книги</h3>
-            
-            <form onSubmit={handleUpdateSubmit}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block mb-1">Название</label>
-                  <input
-                    type="text"
-                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                    value={editingBook.title}
-                    onChange={(e) => setEditingBook({ ...editingBook, title: e.target.value })}
-                    required
-                  />
-                </div>
-                
-                <div>
-                  <label className="block mb-1">Автор</label>
-                  <input
-                    type="text"
-                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                    value={editingBook.author}
-                    onChange={(e) => setEditingBook({ ...editingBook, author: e.target.value })}
-                    required
-                  />
-                </div>
-                
-                <div>
-                  <label className="block mb-1">ISBN</label>
-                  <input
-                    type="text"
-                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                    value={editingBook.isbn}
-                    onChange={handleIsbnChange}
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Формат: 978-3-16-148410-0 (ISBN-13)
-                    {editingBook.isbnChanged && 
-                      <span className="ml-2 text-amber-500">
-                        (Изменен с {editingBook.originalIsbn})
-                      </span>
-                    }
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="block mb-1">Дата публикации</label>
-                  <input
-                    type="date"
-                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                    value={editingBook.published}
-                    onChange={(e) => setEditingBook({ ...editingBook, published: e.target.value })}
-                    required
-                  />
-                </div>
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
+          <h3 className="text-xl font-bold mb-4">Редактирование книги</h3>
+          
+          <form onSubmit={handleUpdateSubmit}>
+            <div className="space-y-4">
+              <div>
+                <label className="block mb-1">Название</label>
+                <input
+                  type="text"
+                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                  value={editingBook.title}
+                  onChange={(e) => setEditingBook({ ...editingBook, title: e.target.value })}
+                  required
+                />
               </div>
               
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  type="button"
-                  className="px-4 py-2 border rounded"
-                  onClick={() => setEditingBook(null)}
-                >
-                  Отмена
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded"
-                  disabled={updateMutation.isLoading}
-                >
-                  {updateMutation.isLoading ? "Сохранение..." : "Сохранить"}
-                </button>
+              <div>
+                <label className="block mb-1">Автор</label>
+                <input
+                  type="text"
+                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                  value={editingBook.author}
+                  onChange={(e) => setEditingBook({ ...editingBook, author: e.target.value })}
+                  required
+                />
               </div>
-            </form>
-          </div>
+              
+              <div>
+                <label className="block mb-1">ISBN</label>
+                <input
+                  type="text"
+                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                  value={editingBook.isbn}
+                  onChange={handleIsbnChange}
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Формат: 978-3-16-148410-0 (ISBN-13)
+                  {editingBook.isbnChanged && 
+                    <span className="ml-2 text-amber-500">
+                      (Изменен с {editingBook.originalIsbn})
+                    </span>
+                  }
+                </p>
+              </div>
+              
+              <div>
+                <label className="block mb-1">Дата публикации</label>
+                <input
+                  type="date"
+                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                  value={editingBook.published}
+                  onChange={(e) => setEditingBook({ ...editingBook, published: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                type="button"
+                className="px-4 py-2 border rounded"
+                onClick={() => setEditingBook(null)}
+              >
+                Отмена
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded"
+                disabled={updateMutation.isLoading}
+              >
+                {updateMutation.isLoading ? "Сохранение..." : "Сохранить"}
+              </button>
+            </div>
+          </form>
         </div>
-        
-        {error && <ErrorAlert message={error} onClose={handleCloseError} />}
-      </>
+      </div>
     );
   }
 
@@ -328,7 +294,12 @@ const BooksList = ({ searchQuery }) => {
       {!searchQuery && data.total_pages > 0 && (
         <div className="mt-6 flex justify-between items-center">
           <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() => {
+              if (page > 1) {
+                setPage(p => p - 1);
+                toast.info(`Страница ${page - 1}`);
+              }
+            }}
             disabled={page === 1}
             className="px-4 py-2 border rounded disabled:opacity-50"
           >
@@ -340,7 +311,12 @@ const BooksList = ({ searchQuery }) => {
           </span>
           
           <button
-            onClick={() => setPage((p) => p + 1)}
+            onClick={() => {
+              if (page < Math.ceil(data.total_books / data.page_size)) {
+                setPage(p => p + 1);
+                toast.info(`Страница ${page + 1}`);
+              }
+            }}
             disabled={!data.total_books || page >= Math.ceil(data.total_books / data.page_size)}
             className="px-4 py-2 border rounded disabled:opacity-50"
           >
@@ -348,8 +324,6 @@ const BooksList = ({ searchQuery }) => {
           </button>
         </div>
       )}
-      
-      {error && <ErrorAlert message={error} onClose={handleCloseError} />}
     </>
   );
 };
