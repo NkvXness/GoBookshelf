@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Book, User, Hash, Calendar } from "lucide-react";
+import { useToast } from "../contexts/ToastContext";
 import api from "../utils/axios";
 
 // Утилита для валидации ISBN
@@ -45,6 +46,8 @@ const formatISBN = (isbn) => {
 
 const AddBookForm = ({ onClose }) => {
   const queryClient = useQueryClient();
+  const toast = useToast();
+  
   const [formData, setFormData] = useState({
     title: "",
     author: "",
@@ -73,16 +76,16 @@ const AddBookForm = ({ onClose }) => {
   // Мутация для добавления книги
   const addBookMutation = useMutation({
     mutationFn: (newBook) => {
-      console.log("Отправка данных:", newBook);
       return api.post("/api/books", newBook);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(["books"]);
+      toast.success("Книга успешно добавлена");
       onClose();
     },
     onError: (error) => {
       console.error("Ошибка добавления книги:", error);
-      alert("Ошибка добавления книги: " + (error.response?.data?.message || "Проверьте формат ISBN"));
+      toast.error(`Ошибка добавления книги: ${error.response?.data?.message || "Проверьте формат ISBN"}`);
     },
   });
 
@@ -107,6 +110,10 @@ const AddBookForm = ({ onClose }) => {
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
+      
+      // Показываем первую ошибку в уведомлении
+      const firstError = Object.values(newErrors)[0];
+      toast.error(firstError);
       return;
     }
 
@@ -121,7 +128,7 @@ const AddBookForm = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
         {/* Заголовок */}
         <div className="flex justify-between items-center p-5 border-b dark:border-gray-700">
@@ -212,7 +219,7 @@ const AddBookForm = ({ onClose }) => {
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
             >
               Отмена
             </button>
